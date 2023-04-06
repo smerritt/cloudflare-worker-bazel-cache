@@ -1,3 +1,7 @@
 name = "bz"
 main = "src/index.js"
 compatibility_date = "2023-04-05"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "<replace me with a real bucket name>"
