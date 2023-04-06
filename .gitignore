@@ -173,3 +173,4 @@ dist
 
 # Emacs save files
 *~
+.#*
