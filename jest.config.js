@@ -150,6 +150,7 @@ export default {
   // Options that will be passed to the testEnvironment
   // testEnvironmentOptions: {},
 	testEnvironmentOptions: {
+		// Don't keep R2 data around between test runs.
 		"r2_persist": false,
 	},
 
