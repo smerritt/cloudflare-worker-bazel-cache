@@ -8,6 +8,8 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+export function foo() { return "bar"; }
+
 export default {
 	async fetch(request, env, ctx) {
 		return new Response("Hello World!");
