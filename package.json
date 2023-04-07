@@ -7,6 +7,9 @@
     "miniflare": "^2.13.0",
     "wrangler": "2.12.3"
   },
+	"dependencies": {
+		"itty-router": "^3.0"
+	},
   "type": "module",
   "private": true,
   "scripts": {
@@ -14,4 +17,5 @@
     "deploy": "wrangler publish",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   }
+
 }
