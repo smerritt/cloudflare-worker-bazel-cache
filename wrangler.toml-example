@@ -1,0 +1,14 @@
+# Copy this file to wrangler.toml and fill in the relevant entries
+# with the information about your actual R2 bucket and D1 database.
+name = "bz"
+main = "src/index.js"
+compatibility_date = "2023-04-05"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "<replace me with your bucket's name>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "<replace me with your database's name>"
+database_id = "<replace me with your database's UUID>"

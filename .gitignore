@@ -174,3 +174,7 @@ dist
 # Emacs save files
 *~
 .#*
+
+
+# Don't commit our actual wrangler.toml
+wrangler.toml
