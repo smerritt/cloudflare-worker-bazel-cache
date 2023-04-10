@@ -26,6 +26,8 @@ describe("Bazel cache", () => {
 	beforeEach(async () => {
 		env = getMiniflareBindings();
 		await env.BUCKET.put("secrets/" + secret_id, secret_value);
+
+		worker.flushCaches();
 	});
 
 	test("it requires authentication for PUT /ac", async () => {
@@ -57,6 +59,16 @@ describe("Bazel cache", () => {
 			method: "GET",
 		});
 		let resp = await worker.fetch(req, env);
+		expect(resp.status).toBe(401);
+	});
+
+	test("it requires authentication for GET /cas repeatedly", async () => {
+		let req = new Request("https://localhost/cas/foo", {
+			method: "GET",
+		});
+		let resp = await worker.fetch(req, env);
+		expect(resp.status).toBe(401);
+		resp = await worker.fetch(req, env);
 		expect(resp.status).toBe(401);
 	});
 

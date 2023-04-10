@@ -13,6 +13,54 @@ import { Router } from "itty-router";
 const SECRET_ID_HEADER = "Bazel-Cache-Secret-Id";
 const SECRET_VALUE_HEADER = "Bazel-Cache-Secret-Value";
 
+// Cache positive results for 10 minutes, but negative results for
+// only 5 seconds. This way, if someone is trying to sort out their
+// authentication, they don't need to wait very long for things to
+// expire before trying again.
+const POSITIVE_TTL = 10 * 60 * 1000;
+const NEGATIVE_TTL = 5 * 1000;
+	
+
+// Caches secrets in memory. This saves us from asking R2 for the same
+// secret over and over.
+class SecretCache {
+	constructor() {
+		this.secrets = {}
+	}
+
+	// Gets a secret. If the stored secret is expired or missing, calls
+	// fetch_fn to generate the value.
+	async retrieve(secret_id, fetch_fn) {
+		const now = new Date();
+		if (secret_id in this.secrets &&
+				this.secrets[secret_id].expiration < now) {
+			return this.secrets[secret_id].value;
+		}
+
+		const value = await fetch_fn();
+		const ttl = value ? POSITIVE_TTL : NEGATIVE_TTL;
+		this.secrets[secret_id] = {
+			expiration: now + ttl,
+			value: value,
+		};
+		return value;
+	}
+
+	// Clears out the cache. This should only be used in testing.
+	flush() {
+		this.secrets = {}
+	}
+}
+
+// This is global so it persists for the lifetime of the worker.
+let secretCache = new SecretCache();
+
+// Helper function to fetch the contents of a small object from an R2
+// bucket. Returns the contents or null if the object was not found.
+async function fetchFromR2(key, bucket) {
+	let obj = await bucket.get(key);
+	return obj ? await obj.text() : null;
+}
 
 // Returns true if a request is authenticated, false otherwise.
 async function authenticated(request, env, ctx) {
@@ -24,16 +72,17 @@ async function authenticated(request, env, ctx) {
 		return false;
 	}
 
-	let id = request.headers.get(SECRET_ID_HEADER);
-	let user_value = request.headers.get(SECRET_VALUE_HEADER);
-
-	let secret_object = await env.BUCKET.get("secrets/" + id);
-	if (!secret_object) {
+	const id = request.headers.get(SECRET_ID_HEADER);
+	const key = "secrets/" + id;
+	const stored_value = await secretCache.retrieve(key, async () => {
+		return await fetchFromR2(key, env.BUCKET);
+	});
+	if (stored_value === null) {
 		return false;
 	}
 
+	const user_value = request.headers.get(SECRET_VALUE_HEADER);
 	// TODO: constant-time string comparison
-	let stored_value = await secret_object.text();
 	return user_value == stored_value;
 };
 
@@ -95,5 +144,9 @@ router.all("*", () => { return new Response("Not found", {status: 404}) });
 export default {
 	async fetch(request, env, ctx) {
 		return await router.handle(request, env, ctx);
+	},
+
+	flushCaches() {
+		secretCache.flush();
 	},
 };
