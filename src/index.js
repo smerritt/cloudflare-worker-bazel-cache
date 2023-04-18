@@ -10,8 +10,8 @@
 
 import { Router } from 'itty-router';
 
-const SECRET_ID_HEADER = 'Bazel-Cache-Secret-Id';
-const SECRET_VALUE_HEADER = 'Bazel-Cache-Secret-Value';
+const TOKEN_ID_HEADER = 'Bazel-Cache-Token-Id';
+const TOKEN_VALUE_HEADER = 'Bazel-Cache-Token-Value';
 
 // Cache positive results for 10 minutes, but negative results for
 // only 5 seconds. This way, if someone is trying to sort out their
@@ -20,25 +20,25 @@ const SECRET_VALUE_HEADER = 'Bazel-Cache-Secret-Value';
 const POSITIVE_TTL = 10 * 60 * 1000;
 const NEGATIVE_TTL = 5 * 1000;
 
-// Caches secrets in memory. This saves us from asking R2 for the same
-// secret over and over.
-class SecretCache {
+// Caches tokens in memory. This saves us from asking R2 for the same
+// token over and over.
+class TokenCache {
   constructor () {
-    this.secrets = {};
+    this.tokens = {};
   }
 
-  // Gets a secret. If the stored secret is expired or missing, calls
+  // Gets a token. If the stored token is expired or missing, calls
   // fetchFn to generate the value.
-  async retrieve (secretId, fetchFn) {
+  async retrieve (tokenId, fetchFn) {
     const now = new Date();
-    if (secretId in this.secrets &&
-        this.secrets[secretId].expiration < now) {
-      return this.secrets[secretId].value;
+    if (tokenId in this.tokens &&
+        this.tokens[tokenId].expiration < now) {
+      return this.tokens[tokenId].value;
     }
 
     const value = await fetchFn();
     const ttl = value ? POSITIVE_TTL : NEGATIVE_TTL;
-    this.secrets[secretId] = {
+    this.tokens[tokenId] = {
       expiration: now + ttl,
       value
     };
@@ -47,12 +47,12 @@ class SecretCache {
 
   // Clears out the cache. This should only be used in testing.
   flush () {
-    this.secrets = {};
+    this.tokens = {};
   }
 }
 
 // This is global so it persists for the lifetime of the worker.
-const secretCache = new SecretCache();
+const tokenCache = new TokenCache();
 
 // Helper function to fetch the contents of a small object from an R2
 // bucket. Returns the contents or null if the object was not found.
@@ -67,20 +67,20 @@ async function authenticated (request, env, ctx) {
   // scale beyond a team of a couple dozen. Certificate auth would be
   // a better choice for large teams, but I don't currently have one
   // of those.
-  if (!request.headers.has(SECRET_ID_HEADER) || !request.headers.has(SECRET_VALUE_HEADER)) {
+  if (!request.headers.has(TOKEN_ID_HEADER) || !request.headers.has(TOKEN_VALUE_HEADER)) {
     return false;
   }
 
-  const id = request.headers.get(SECRET_ID_HEADER);
-  const key = 'secrets/' + id;
-  const storedValue = await secretCache.retrieve(key, async () => {
+  const id = request.headers.get(TOKEN_ID_HEADER);
+  const key = 'tokens/' + id;
+  const storedValue = await tokenCache.retrieve(key, async () => {
     return await fetchFromR2(key, env.BUCKET);
   });
   if (storedValue === null) {
     return false;
   }
 
-  const userValue = request.headers.get(SECRET_VALUE_HEADER);
+  const userValue = request.headers.get(TOKEN_VALUE_HEADER);
   // TODO: constant-time string comparison
   return userValue === storedValue;
 }
@@ -182,6 +182,6 @@ export default {
   },
 
   flushCaches () {
-    secretCache.flush();
+    tokenCache.flush();
   }
 };

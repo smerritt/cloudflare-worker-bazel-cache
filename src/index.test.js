@@ -17,12 +17,12 @@ async function streamToBlob (rstream) {
 describe('Bazel cache', () => {
   let env;
   const ctx = new ExecutionContext();
-  const secretId = 'squirrel';
-  const secretValue = 'many buried nuts';
+  const tokenId = 'squirrel';
+  const tokenValue = 'many buried nuts';
 
   const authedHeaders = new Headers({
-    'Bazel-Cache-Secret-Id': secretId,
-    'Bazel-Cache-Secret-Value': secretValue
+    'Bazel-Cache-Token-Id': tokenId,
+    'Bazel-Cache-Token-Value': tokenValue
   });
 
   beforeAll(async () => {
@@ -32,7 +32,7 @@ describe('Bazel cache', () => {
   });
 
   beforeEach(async () => {
-    await env.BUCKET.put('secrets/' + secretId, secretValue);
+    await env.BUCKET.put('tokens/' + tokenId, tokenValue);
 
     worker.flushCaches();
   });
