@@ -7,6 +7,7 @@
     "jest": "^29.5.0",
     "jest-environment-miniflare": "^2.13.0",
     "miniflare": "^2.13.0",
+    "semistandard": "*",
     "wrangler": "^2.15.1"
   },
   "dependencies": {
@@ -17,6 +18,8 @@
   "scripts": {
     "start": "wrangler dev",
     "deploy": "wrangler publish",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "lint": "semistandard",
+    "fix": "semistandard --fix"
   }
 }
