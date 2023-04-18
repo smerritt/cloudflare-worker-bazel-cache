@@ -90,19 +90,37 @@ async function authenticated(request, env, ctx) {
 // corresponding R2 object name (e.g. "ac/something").
 //
 // The argument is the string form of a URL, for example
-// "request.url".
+// that given by request.url
 function urlToObjectName(u) {
 	return new URL(u).pathname.slice(1);  // drop leading slash
 }
-
 
 async function handlePut(request, env, ctx) {
 	if (!await authenticated(request, env, ctx)) {
 		return new Response("Not authenticated", {status: 401})
 	}
 
-	let bucket = env.BUCKET;
-	let put_succeeded = await bucket.put(urlToObjectName(request.url), request.body)
+	// Before accepting the upload, we make sure there's an entry in the
+	// database for it. It's important that the database contain a
+	// superset of the objects actually in the bucket so that we never
+	// lose track of objects.
+	const objKey = urlToObjectName(request.url);
+
+	// Database time is seconds, not milliseconds. SQLite uses a
+	// variable-length integer encoding where smaller numbers take up
+	// less space, and we don't need sub-second precision here.
+	//
+	// We could probably get away with dekaseconds or even hectoseconds,
+	// but seconds should be fine for now.
+	const nowInEpochSeconds = Math.floor(Date.now() / 1000);
+	await env.__D1_BETA__DB.prepare(
+		'INSERT INTO CacheEntries (key, last_used) VALUES (?1, ?2) '
+			+ 'ON CONFLICT(key) DO UPDATE SET last_used=excluded.last_used')
+		.bind(objKey, nowInEpochSeconds)
+		.run();
+	
+	const bucket = env.BUCKET;
+	const put_succeeded = await bucket.put(objKey, request.body)
 	if (!put_succeeded) {
 		return new Response("Upload failed", {status: 500});
 	}
@@ -113,6 +131,25 @@ async function handleGet(request, env, ctx) {
 	if (!await authenticated(request, env, ctx)) {
 		return new Response("Not authenticated", {status: 401})
 	}
+
+	const objKey = urlToObjectName(request.url);
+
+	// See handlePut for rationale behind using seconds.
+	const nowInEpochSeconds = Math.floor(Date.now() / 1000);
+
+	// There's no need to wait for this to complete before serving the
+	// file. In the worst case, the last-used update fails and the object
+	// expires prematurely.
+	//
+	// Recall that object lifetimes are days or weeks; if the object is
+	// popular, then a subsequent GET will probably succeed in updating
+	// its last-used time. If it's unpopular, then it might expire
+	// early, but hardly anyone will care. Also, this is a cache; if an
+	// object goes missing, Bazel will rebuild and replace it.
+	ctx.waitUntil(
+		env.__D1_BETA__DB.prepare('UPDATE CacheEntries SET last_used=?1 WHERE key=?2')
+			.bind(nowInEpochSeconds, objKey)
+			.run());
 
 	let bucket = env.BUCKET;
 	let obj = await bucket.get(urlToObjectName(request.url));

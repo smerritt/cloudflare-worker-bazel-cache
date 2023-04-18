@@ -9,6 +9,7 @@ binding = "BUCKET"
 bucket_name = "<replace me with your bucket's name>"
 
 [[d1_databases]]
-binding = "DB"
+# The __D1_BETA__ prefix is to work around https://github.com/cloudflare/workers-sdk/issues/3020
+binding = "__D1_BETA__DB"
 database_name = "<replace me with your database's name>"
 database_id = "<replace me with your database's UUID>"
