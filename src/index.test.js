@@ -79,6 +79,20 @@ describe('Bazel cache', () => {
     expect(resp.status).toBe(401);
   });
 
+  test('it handles a missing auth token in R2', async () => {
+    const badAuthHeaders = new Headers({
+      'Bazel-Cache-Token-Id': 'noSuchThing',
+      'Bazel-Cache-Token-Value': '151a86101365-abc31cb4ee18'
+    });
+
+    const req = new Request('https://localhost/cas/foo', {
+      method: 'GET',
+      headers: badAuthHeaders
+    });
+    const resp = await worker.fetch(req, env, ctx);
+    expect(resp.status).toBe(401);
+  });
+
   test('it has a default handler that 404s', async () => {
     const req = new Request('https://localhost/blah/blah/fishcakes');
     const resp = await worker.fetch(req, env, ctx);
@@ -136,6 +150,14 @@ describe('Bazel cache', () => {
 
     expect(results.length).toBe(1);
     expect(results[0].last_used).toBeGreaterThanOrEqual(testStartTimeUnixSeconds);
+  });
+
+  test('it 404s when the file is not in R2', async () => {
+    const req = new Request('https://localhost/ac/nope-not-here', {
+      headers: authedHeaders
+    });
+    const resp = await worker.fetch(req, env, ctx);
+    expect(resp.status).toBe(404);
   });
 
   test('it updates the last-used time on a PUT that overwrites a file', async () => {
