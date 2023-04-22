@@ -19,6 +19,7 @@
     "start": "wrangler dev",
     "deploy": "wrangler publish",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --collect-coverage",
     "lint": "semistandard",
     "fix": "semistandard --fix"
   }
