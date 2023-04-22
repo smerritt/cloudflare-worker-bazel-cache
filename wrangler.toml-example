@@ -4,6 +4,10 @@ name = "<name your worker here>"
 main = "src/index.js"
 compatibility_date = "2023-04-05"
 
+# Cleans up expired files every 2 hours.
+[triggers]
+crons = ["3 */2 * * *"]
+
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "<replace me with your bucket's name>"

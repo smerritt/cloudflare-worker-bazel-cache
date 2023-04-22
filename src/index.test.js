@@ -192,4 +192,69 @@ describe('Bazel cache', () => {
     expect(results.length).toBe(1);
     expect(results[0].last_used).toBeGreaterThanOrEqual(testStartTimeUnixSeconds);
   });
+
+  describe('scheduled callback', () => {
+    const freshRowCount = Math.floor(2.5 * worker.STALE_OBJECT_BATCH_SIZE);
+    const expiredTimeUnixSeconds = (Math.floor(Date.now() / 1000)) - worker.STALENESS_THRESHOLD - 1;
+
+    beforeEach(async () => {
+      const testStartTimeUnixSeconds = Math.floor(Date.now() / 1000);
+      const stmt = env.__D1_BETA__DB.prepare('INSERT INTO CacheEntries (key, last_used) VALUES (?1, ?2)');
+      for (let i = 0; i < freshRowCount; i++) {
+        // We put in one expired and one unexpired object.
+        await stmt.bind('ac/' + i + '_stale', expiredTimeUnixSeconds - i)
+          .run();
+        await env.BUCKET.put('ac/' + i + '_stale', new Blob(['stale ' + i]).stream());
+
+        await stmt.bind('ac/' + i + '_fresh', testStartTimeUnixSeconds - i)
+          .run();
+        await env.BUCKET.put('ac/' + i + '_fresh', new Blob(['fresh ' + i]).stream());
+      }
+    });
+
+    test('it removes the expired rows from the DB', async () => {
+      await worker.scheduled('not sure what goes here', env, ctx);
+
+      let results = await env.__D1_BETA__DB.prepare(
+        'SELECT COUNT(*) AS c FROM CacheEntries WHERE last_used < ?1')
+        .bind(expiredTimeUnixSeconds)
+        .all();
+      expect(results.results[0].c).toBe(0);
+
+      results = await env.__D1_BETA__DB.prepare(
+        'SELECT COUNT(*) AS c FROM CacheEntries WHERE last_used > ?1')
+        .bind(expiredTimeUnixSeconds)
+        .all();
+      expect(results.results[0].c).toBe(freshRowCount);
+    });
+
+    test('it removes the expired objects from R2', async () => {
+      await worker.scheduled('not sure what goes here', env, ctx);
+
+      let freshCount = 0;
+      let staleCount = 0;
+      let bogonCount = 0;
+
+      const listing = await env.BUCKET.list({ prefix: 'ac/' });
+
+      // Sanity check: all the results fit in the first page of
+      // listings.
+      expect(listing.truncated).toBe(false);
+
+      for (const obj of listing.objects) {
+        if (obj.key.includes('stale')) {
+          staleCount++;
+        } else if (obj.key.includes('fresh')) {
+          freshCount++;
+        } else {
+          bogonCount++;
+        }
+      }
+
+      // Test sanity: there's nothing unexpected in the bucket
+      expect(bogonCount).toEqual(0);
+      expect(staleCount).toEqual(0);
+      expect(freshCount).toEqual(freshRowCount);
+    });
+  });
 });

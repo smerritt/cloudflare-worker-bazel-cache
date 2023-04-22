@@ -15,6 +15,13 @@ const TOKEN_VALUE_HEADER = 'Bazel-Cache-Token-Value';
 const POSITIVE_TTL = 10 * 60 * 1000;
 const NEGATIVE_TTL = 5 * 1000;
 
+// After this much time without being accessed, an object is
+// considered stale.
+const STALENESS_THRESHOLD = 86400 * 14; // Two weeks in seconds
+
+// How many stale objects to delete at a time.
+const STALE_OBJECT_BATCH_SIZE = 100;
+
 // Caches tokens in memory. This saves us from asking R2 for the same
 // token over and over.
 class TokenCache {
@@ -171,12 +178,63 @@ router.get('/cas/*', async (request, env, ctx) => {
 
 router.all('*', () => { return new Response('Not found', { status: 404 }); });
 
+// Generates keys for stale objects needing deletion.
+//
+// Yields batches of size STALE_OBJECT_BATCH_SIZE.
+async function * getStaleObjectsFromDB (dbHandle) {
+  let marker = ''; // Largest value from last set of results
+  const staleTime = Math.floor(Date.now() / 1000 - STALENESS_THRESHOLD);
+
+  while (true) {
+    const results = await dbHandle.prepare('SELECT key FROM CacheEntries WHERE key > ?1 AND last_used <= ?2 LIMIT ?3')
+      .bind(marker, staleTime, STALE_OBJECT_BATCH_SIZE)
+      .all();
+
+    const rows = results.results;
+    if (rows.length === 0) {
+      return;
+    }
+
+    const keys = [];
+    for (const row of rows) {
+      keys.push(row.key);
+    }
+    marker = keys[keys.length - 1];
+    yield keys;
+  }
+}
+
+// Deletes the rows for the given keys.
+async function deleteKeysFromDB (dbHandle, keys) {
+  const placeholders = keys.map(() => '?').join(',');
+  const sql = ('DELETE FROM CacheEntries WHERE key IN (' +
+               placeholders + ')');
+  await dbHandle.prepare(sql).bind(...keys).run();
+}
+
 export default {
+  // Handles HTTP requests.
   async fetch (request, env, ctx) {
     return await router.handle(request, env, ctx);
   },
 
+  // Handles scheduled invocations from cron triggers.
+  async scheduled (request, env, ctx) {
+    for await (const keys of getStaleObjectsFromDB(env.__D1_BETA__DB)) {
+      // handlePut creates the DB entry before the object to ensure
+      // that the DB is a superset of the bucket. We delete from R2
+      // before the DB for the same reason.
+      env.BUCKET.delete(keys);
+
+      await deleteKeysFromDB(env.__D1_BETA__DB, keys);
+    }
+  },
+
+  // These are exported only to help in writing tests.
   flushCaches () {
     tokenCache.flush();
-  }
+  },
+
+  STALE_OBJECT_BATCH_SIZE,
+  STALENESS_THRESHOLD
 };
